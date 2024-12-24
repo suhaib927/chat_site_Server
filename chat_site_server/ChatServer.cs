@@ -138,43 +138,21 @@ class ChatServer
         // تحليل الرسالة بناءً على الفاصل |
         Message message = JsonConvert.DeserializeObject<Message>(receivedMessage);
 
-        string senderIdStr = message.SenderId.ToString();  // ID المرسل
-        string receiverIdStr = message.ReceiverId.ToString();  // ID المستقبل
-        string messageType = message.Type;  // نوع الرسالة
-        string messageContent = message.MessageContent;  // محتوى الرسالة
-        DateTime timestamp =DateTime.Now;  // التاريخ/الوقت
-
-        // إنشاء كائن Message لتخزينه في قاعدة البيانات
-        var newMessage = new Message
-        {
-            MessageId = Guid.NewGuid(),
-            SenderId = Guid.Parse(senderIdStr),
-            ReceiverId = Guid.Parse(receiverIdStr),
-            MessageContent = messageContent,
-            SentAt = timestamp,  // تعيين الوقت
-            Type = messageType,
-            Status = false // الرسالة لم يتم تسليمها بعد
-        };
-
-        // إضافة الرسالة إلى قاعدة البيانات
-        _context.Messages.Add(newMessage);
-        await _context.SaveChangesAsync();
-
         // إرسال الرسالة بناءً على نوعها
-        if (messageType.Equals("Individual", StringComparison.OrdinalIgnoreCase))
+        if (message.Type.Equals("Private", StringComparison.OrdinalIgnoreCase))
         {
             // رسالة فردية (إرسال إلى شخص واحد)
-            await SendMessageToIndividual(newMessage);
+            await SendMessageToPrivate(message);
         }
-        else if (messageType.Equals("Group", StringComparison.OrdinalIgnoreCase))
+        else if (message.Type.Equals("Group", StringComparison.OrdinalIgnoreCase))
         {
             // رسالة لمجموعة
-            await SendMessageToGroup(receiverIdStr, messageContent);
+            await SendMessageToGroup(message.ReceiverId.ToString(), message.MessageContent);
         }
-        else if (messageType.Equals("Broadcast", StringComparison.OrdinalIgnoreCase))
+        else if (message.Type.Equals("Broadcast", StringComparison.OrdinalIgnoreCase))
         {
             // رسالة للجميع
-            await BroadcastMessage(messageContent);
+            await BroadcastMessage(message.MessageContent);
         }
         else
         {
@@ -183,7 +161,7 @@ class ChatServer
         
     }
 
-    private async Task SendMessageToIndividual(Message message)
+    private async Task SendMessageToPrivate(Message message)
     {
         string receiverId = message.ReceiverId.ToString();
         if (_clients.ContainsKey(receiverId))
@@ -200,8 +178,7 @@ class ChatServer
             var deliveredMessage = await _context.Messages.FirstOrDefaultAsync(m => m.ReceiverId == Guid.Parse(receiverId));
             if (deliveredMessage != null)
             {
-                deliveredMessage.Status = true;
-                _context.Update(deliveredMessage);
+                _context.Messages.Remove(deliveredMessage); // حذف العنصر
                 await _context.SaveChangesAsync();
             }
         }

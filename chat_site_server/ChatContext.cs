@@ -17,7 +17,6 @@ namespace chat_site_server
         public DbSet<Group> Groups { get; set; }
         public DbSet<GroupMember> GroupMembers { get; set; }
         public DbSet<Message> Messages { get; set; }
-        public DbSet<FailedMessage> FailedMessages { get; set; }
         
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -47,12 +46,6 @@ namespace chat_site_server
                 .HasForeignKey(m => m.ReceiverId)
                 .OnDelete(DeleteBehavior.Cascade); // Prevent cascading delete
 
-
-            // Configuring relationships for FailedMessage
-            modelBuilder.Entity<FailedMessage>()
-                .HasOne(fm => fm.Message)
-                .WithOne(m => m.FailedMessage)
-                .HasForeignKey<FailedMessage>(fm => fm.MessageId);
 
             modelBuilder.Entity<User>()
     .Property(u => u.Ip)
