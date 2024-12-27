@@ -87,7 +87,6 @@ class ChatServer
             while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
             {
                 string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-                Console.WriteLine($"Received message from {userId}: {message}");
 
                 // Process and store the message, and send it to the receiver
                 await ProcessAndStoreMessage(message, userId);
@@ -113,30 +112,20 @@ class ChatServer
     {
         // Now using the static _context variable to access the database
         var missedMessages = await _context.Messages
-            .Where(m => m.ReceiverId == Guid.Parse(userId) && m.Status == false)
+            .Where(m => m.ReceiverId ==userId && m.Status == false)
             .ToListAsync();
 
         foreach (var message in missedMessages)
         {
-            // Send the missed message to the client
-            var client = _clients[userId];
-            var stream = client.GetStream();
-            var messageBytes = Encoding.UTF8.GetBytes(message.MessageContent);
-            await stream.WriteAsync(messageBytes, 0, messageBytes.Length);
-
-            // Update the message status to delivered
-            message.Status = true;
-            _context.Update(message);
+            await SendMessageToPrivate(message);
         }
-
-        // Save the updates to the database
-        await _context.SaveChangesAsync();
     }
 
     private async Task ProcessAndStoreMessage(string receivedMessage, string senderId)
     {
         // تحليل الرسالة بناءً على الفاصل |
         Message message = JsonConvert.DeserializeObject<Message>(receivedMessage);
+
 
         // إرسال الرسالة بناءً على نوعها
         if (message.Type.Equals("Private", StringComparison.OrdinalIgnoreCase))
@@ -147,7 +136,7 @@ class ChatServer
         else if (message.Type.Equals("Group", StringComparison.OrdinalIgnoreCase))
         {
             // رسالة لمجموعة
-            await SendMessageToGroup(message.ReceiverId.ToString(), message.MessageContent);
+            await SendMessageToGroup(message);
         }
         else if (message.Type.Equals("Broadcast", StringComparison.OrdinalIgnoreCase))
         {
@@ -167,42 +156,46 @@ class ChatServer
         if (_clients.ContainsKey(receiverId))
         {
             var targetClient = _clients[receiverId];
-            var targetSocket = targetClient.Client;  // الحصول على الـ Socket
+            var targetSocket = targetClient.Client;  
             string messageJson = JsonConvert.SerializeObject(message);
             var responseBytes = Encoding.UTF8.GetBytes(messageJson);
 
-            // إرسال البيانات باستخدام SendAsync على الـ Socket
             await targetSocket.SendAsync(responseBytes);
 
-            // تحديث حالة الرسالة إلى Delivered
-            var deliveredMessage = await _context.Messages.FirstOrDefaultAsync(m => m.ReceiverId == Guid.Parse(receiverId));
+            var deliveredMessage = await _context.Messages.FirstOrDefaultAsync(m => m.ReceiverId == receiverId);
             if (deliveredMessage != null)
             {
-                _context.Messages.Remove(deliveredMessage); // حذف العنصر
+                _context.Messages.Remove(deliveredMessage); 
                 await _context.SaveChangesAsync();
+            }
+        } else
+        {
+            try
+            {
+                await _context.Messages.AddAsync(message);
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex)
+            {
+                Console.WriteLine($"Error saving user: {ex.InnerException?.Message}");
+                throw;
             }
         }
     }
 
 
-    private async Task SendMessageToGroup(string groupId, string messageContent)
+    private async Task SendMessageToGroup(Message message)
     {
         // استرجاع جميع الأعضاء في المجموعة
         var groupMembers = await _context.GroupMembers
-            .Where(gm => gm.GroupId == Guid.Parse(groupId))
-            .ToListAsync();
+        .Where(gm => gm.GroupId == Guid.Parse(message.GroupId) && gm.UserId != message.SenderId)
+        .ToListAsync();
 
         foreach (var groupMember in groupMembers)
         {
-            string memberId = groupMember.UserId.ToString();
-
-            if (_clients.ContainsKey(memberId))
-            {
-                var targetClient = _clients[memberId];
-                var targetSocket = targetClient.Client;
-                var responseBytes = Encoding.UTF8.GetBytes(messageContent);
-                await targetSocket.SendAsync(new ArraySegment<byte>(responseBytes), SocketFlags.None);
-            }
+            Guid memberId = groupMember.UserId;
+            message.ReceiverId = memberId.ToString();
+            SendMessageToPrivate(message);
         }
     }
 

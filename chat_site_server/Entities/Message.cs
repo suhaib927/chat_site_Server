@@ -15,15 +15,15 @@ namespace chat_site_server.Entities
         public Guid SenderId { get; set; }
         public User Sender { get; set; } // User who sent the message
 
-        [Required]
-        [ForeignKey(nameof(Receiver))]
-        public Guid ReceiverId { get; set; }
-        public User Receiver { get; set; } // User who received the message
+        public string? ReceiverId { get; set; }
+
+        public string? GroupId { get; set; }
 
         public string MessageContent { get; set; }
         public DateTime SentAt { get; set; } = DateTime.Now;
 
         public string Type { get; set; }
+
         public bool Status { get; set; } = false; // Delivered or not
 
     }

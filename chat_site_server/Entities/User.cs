@@ -31,7 +31,6 @@ namespace chat_site_server.Entities
 
         public ICollection<GroupMember> GroupMemberships { get; set; } // Groups the user belongs to
         public ICollection<Message> SentMessages { get; set; } // Messages sent by the user
-        public ICollection<Message> ReceivedMessages{ get; set; }
         
     }
 }
