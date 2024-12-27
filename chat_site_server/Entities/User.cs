@@ -12,9 +12,6 @@ namespace chat_site_server.Entities
         [Key]
         public Guid UserId { get; set; }
 
-        public string Ip { get; set; } = "000.000.000.000";
-
-
         [Required]
         [StringLength(30)]
         public string Username { get; set; }
@@ -30,8 +27,6 @@ namespace chat_site_server.Entities
         public string? ProfileImageFileName { get; set; } = "images.jpg";
 
         public ICollection<GroupMember> GroupMemberships { get; set; } // Groups the user belongs to
-        public ICollection<Message> SentMessages { get; set; } // Messages sent by the user
-        public ICollection<Message> ReceivedMessages{ get; set; }
-        
+
     }
 }
