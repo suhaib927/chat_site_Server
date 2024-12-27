@@ -96,6 +96,7 @@ class ChatServer
         {
             var missedMessages = await context.Messages
                 .Where(m => m.ReceiverId == userId && !m.Status)
+                .OrderBy(m => m.SentAt)
                 .ToListAsync();
 
             foreach (var message in missedMessages)
@@ -176,6 +177,7 @@ class ChatServer
             foreach (var member in groupMembers)
             {
                 message.ReceiverId = member.UserId.ToString();
+                message.MessageId = new Guid();
                 await SendMessageToPrivate(message);
             }
         }
