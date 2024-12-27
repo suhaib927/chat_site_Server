@@ -5,31 +5,21 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-using chat_site_server;
 using chat_site_server.Entities;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using chat_site_server;
 
 class ChatServer
 {
     private TcpListener _tcpListener;
     private bool _isRunning;
     private Dictionary<string, TcpClient> _clients; // Store userId and corresponding TcpClient
-    private static ChatContext _context;  // Define the static variable for the DbContext
 
     public ChatServer(string ipAddress, int port)
     {
         _tcpListener = new TcpListener(IPAddress.Parse(ipAddress), port);
         _clients = new Dictionary<string, TcpClient>(); // Initialize the dictionary
-
-        // Initialize the static context variable
-        if (_context == null)
-        {
-            var options = new DbContextOptionsBuilder<ChatContext>()
-                            .UseSqlServer("Server=your_server_address;Database=your_database_name;Trusted_Connection=True;")
-                            .Options;
-            _context = new ChatContext(options);
-        }
     }
 
     public void Start()
@@ -42,11 +32,8 @@ class ChatServer
         {
             try
             {
-                // Accept client connection
                 var client = _tcpListener.AcceptTcpClient();
                 Console.WriteLine("Client connected.");
-
-                // Handle the client in a new task (instead of using threads directly)
                 Task.Run(() => HandleClientAsync(client));
             }
             catch (Exception ex)
@@ -65,7 +52,7 @@ class ChatServer
         string userId = null;
 
         try
-          {
+        {
             // Read the userId sent by the client upon connection
             bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length);
             if (bytesRead > 0)
@@ -73,7 +60,6 @@ class ChatServer
                 userId = Encoding.UTF8.GetString(buffer, 0, bytesRead);
                 Console.WriteLine($"User {userId} connected.");
 
-                // Add the client to the dictionary with the userId
                 if (!_clients.ContainsKey(userId))
                 {
                     _clients.Add(userId, client);
@@ -83,12 +69,9 @@ class ChatServer
             // Send missed messages to the user
             await SendMissedMessagesToUser(userId);
 
-            // Listen for messages from the client
             while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
             {
                 string message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
-
-                // Process and store the message, and send it to the receiver
                 await ProcessAndStoreMessage(message, userId);
             }
         }
@@ -98,7 +81,6 @@ class ChatServer
         }
         finally
         {
-            // Remove client from the dictionary and close connection
             if (userId != null && _clients.ContainsKey(userId))
             {
                 _clients.Remove(userId);
@@ -110,92 +92,92 @@ class ChatServer
 
     private async Task SendMissedMessagesToUser(string userId)
     {
-        // Now using the static _context variable to access the database
-        var missedMessages = await _context.Messages
-            .Where(m => m.ReceiverId ==userId && m.Status == false)
-            .ToListAsync();
-
-        foreach (var message in missedMessages)
+        using (var context = CreateDbContext())
         {
-            await SendMessageToPrivate(message);
+            var missedMessages = await context.Messages
+                .Where(m => m.ReceiverId == userId && !m.Status)
+                .ToListAsync();
+
+            foreach (var message in missedMessages)
+            {
+                await SendMessageToPrivate(message);
+            }
         }
     }
 
     private async Task ProcessAndStoreMessage(string receivedMessage, string senderId)
     {
-        // تحليل الرسالة بناءً على الفاصل |
-        Message message = JsonConvert.DeserializeObject<Message>(receivedMessage);
+        using (var context = CreateDbContext())
+        {
+            Message message = JsonConvert.DeserializeObject<Message>(receivedMessage);
 
-
-        // إرسال الرسالة بناءً على نوعها
-        if (message.Type.Equals("Private", StringComparison.OrdinalIgnoreCase))
-        {
-            // رسالة فردية (إرسال إلى شخص واحد)
-            await SendMessageToPrivate(message);
+            if (message.Type.Equals("Private", StringComparison.OrdinalIgnoreCase))
+            {
+                await SendMessageToPrivate(message);
+            }
+            else if (message.Type.Equals("Group", StringComparison.OrdinalIgnoreCase))
+            {
+                await SendMessageToGroup(message);
+            }
+            else if (message.Type.Equals("Broadcast", StringComparison.OrdinalIgnoreCase))
+            {
+                await BroadcastMessage(message.MessageContent);
+            }
         }
-        else if (message.Type.Equals("Group", StringComparison.OrdinalIgnoreCase))
-        {
-            // رسالة لمجموعة
-            await SendMessageToGroup(message);
-        }
-        else if (message.Type.Equals("Broadcast", StringComparison.OrdinalIgnoreCase))
-        {
-            // رسالة للجميع
-            await BroadcastMessage(message.MessageContent);
-        }
-        else
-        {
-            Console.WriteLine("Unknown message type.");
-        }
-        
     }
 
     private async Task SendMessageToPrivate(Message message)
     {
-        string receiverId = message.ReceiverId.ToString();
-        if (_clients.ContainsKey(receiverId))
+        using (var context = CreateDbContext())
         {
-            var targetClient = _clients[receiverId];
-            var targetSocket = targetClient.Client;  
-            string messageJson = JsonConvert.SerializeObject(message);
-            var responseBytes = Encoding.UTF8.GetBytes(messageJson);
+            string receiverId = message.ReceiverId;
+            if (_clients.ContainsKey(receiverId))
+            {
+                var targetClient = _clients[receiverId];
+                var targetSocket = targetClient.Client;
+                string messageJson = JsonConvert.SerializeObject(message);
+                var responseBytes = Encoding.UTF8.GetBytes(messageJson);
 
-            await targetSocket.SendAsync(responseBytes);
+                await targetSocket.SendAsync(responseBytes);
 
-            var deliveredMessage = await _context.Messages.FirstOrDefaultAsync(m => m.ReceiverId == receiverId);
-            if (deliveredMessage != null)
-            {
-                _context.Messages.Remove(deliveredMessage); 
-                await _context.SaveChangesAsync();
+                var deliveredMessage = await context.Messages.FirstOrDefaultAsync(m => m.ReceiverId == receiverId);
+                if (deliveredMessage != null)
+                {
+                    context.Messages.Remove(deliveredMessage);
+                    await context.SaveChangesAsync();
+                }
             }
-        } else
-        {
-            try
+            else
             {
-                await _context.Messages.AddAsync(message);
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateException ex)
-            {
-                Console.WriteLine($"Error saving user: {ex.InnerException?.Message}");
-                throw;
+                try
+                {
+                    await context.Messages.AddAsync(message);
+                    await context.SaveChangesAsync();
+                }
+                catch (DbUpdateException ex)
+                {
+                    Console.WriteLine($"Error saving user: {ex.InnerException?.Message}");
+                    throw;
+                }
+
             }
         }
-    }
 
+    }
 
     private async Task SendMessageToGroup(Message message)
     {
-        // استرجاع جميع الأعضاء في المجموعة
-        var groupMembers = await _context.GroupMembers
-        .Where(gm => gm.GroupId == Guid.Parse(message.GroupId) && gm.UserId != message.SenderId)
-        .ToListAsync();
-
-        foreach (var groupMember in groupMembers)
+        using (var context = CreateDbContext())
         {
-            Guid memberId = groupMember.UserId;
-            message.ReceiverId = memberId.ToString();
-            SendMessageToPrivate(message);
+            var groupMembers = await context.GroupMembers
+                .Where(gm => gm.GroupId == Guid.Parse(message.GroupId) && gm.UserId.ToString() != message.SenderId)
+                .ToListAsync();
+
+            foreach (var member in groupMembers)
+            {
+                message.ReceiverId = member.UserId.ToString();
+                await SendMessageToPrivate(message);
+            }
         }
     }
 
@@ -205,8 +187,15 @@ class ChatServer
         {
             var targetSocket = client.Client;
             var responseBytes = Encoding.UTF8.GetBytes(messageContent);
-            await targetSocket.SendAsync(new ArraySegment<byte>(responseBytes), SocketFlags.None);
+            await targetSocket.SendAsync(responseBytes);
         }
+    }
+
+    private ChatContext CreateDbContext()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<ChatContext>();
+        optionsBuilder.UseSqlServer("Server=DESKTOP-P6DGD12\\SQLEXPRESS;Database=chat_site_istemci;Trusted_Connection=True;TrustServerCertificate=True;");
+        return new ChatContext(optionsBuilder.Options);
     }
 
     public void Stop()

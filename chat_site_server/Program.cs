@@ -2,8 +2,7 @@
 {
     static void Main(string[] args)
     {
-
-        ChatServer server = new ChatServer("127.0.0.1", 5000); // استمع على 127.0.0.1 على المنفذ 5000
+        ChatServer server = new ChatServer("127.0.0.1", 5000);
         server.Start();
 
         Console.WriteLine("Press any key to stop the server...");

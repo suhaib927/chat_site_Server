@@ -1,5 +1,4 @@
 ﻿using System.ComponentModel.DataAnnotations;
-using chat_site_server.Entities;
 
 namespace chat_site_server.Entities
 {

@@ -14,26 +14,32 @@ namespace chat_site_server
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // GroupMember Relationships
             modelBuilder.Entity<GroupMember>()
                 .HasOne(gm => gm.User)
                 .WithMany(u => u.GroupMemberships)
-                .HasForeignKey(gm => gm.UserId);
+                .HasForeignKey(gm => gm.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             modelBuilder.Entity<GroupMember>()
                 .HasOne(gm => gm.Group)
                 .WithMany(g => g.Members)
-                .HasForeignKey(gm => gm.GroupId);
+                .HasForeignKey(gm => gm.GroupId)
+                .OnDelete(DeleteBehavior.Cascade);
 
-            // Message Relationships
             modelBuilder.Entity<Message>()
-                .HasOne(m => m.Sender)
-                .WithMany(u => u.SentMessages)
-                .HasForeignKey(m => m.SenderId)
-                .OnDelete(DeleteBehavior.Restrict);
+                .Property(m => m.SenderId)
+                .IsRequired(false);
+
+            modelBuilder.Entity<Message>()
+                .Property(m => m.ReceiverId)
+                .IsRequired(false);
+
+            modelBuilder.Entity<Message>()
+                .Property(m => m.GroupId)
+                .IsRequired(false);
 
             modelBuilder.Entity<User>()
-                .Property(u => u.Ip)
+                .Property(u => u.ProfileImageFileName)
                 .IsRequired(false);
 
             base.OnModelCreating(modelBuilder);
