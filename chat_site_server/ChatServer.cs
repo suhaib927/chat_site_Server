@@ -122,7 +122,7 @@ class ChatServer
             }
             else if (message.Type.Equals("Broadcast", StringComparison.OrdinalIgnoreCase))
             {
-                await BroadcastMessage(message.MessageContent);
+                await BroadcastMessage(message);
             }
         }
     }
@@ -183,13 +183,18 @@ class ChatServer
         }
     }
 
-    private async Task BroadcastMessage(string messageContent)
+    private async Task BroadcastMessage(Message message)
     {
-        foreach (var client in _clients.Values)
+        using (var context = CreateDbContext())
         {
-            var targetSocket = client.Client;
-            var responseBytes = Encoding.UTF8.GetBytes(messageContent);
-            await targetSocket.SendAsync(responseBytes);
+            var allUsers = context.Users.Where(u => u.UserId.ToString() != message.SenderId).ToList();
+
+            foreach (var member in allUsers)
+            {
+                message.ReceiverId = member.UserId.ToString();
+                message.MessageId = new Guid();
+                await SendMessageToPrivate(message);
+            }
         }
     }
 
